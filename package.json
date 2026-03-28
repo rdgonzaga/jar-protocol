@@ -1,0 +1,24 @@
+{
+	"name": "jar-protocol",
+	"version": "1.0.0",
+	"description": "Simple bridge that translates SMS (via SMPP) into HTTP JSON for your backend.",
+	"main": "index.js",
+	"scripts": {
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/rdgonzaga/jar-protocol.git"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "ISC",
+	"type": "module",
+	"bugs": {
+		"url": "https://github.com/rdgonzaga/jar-protocol/issues"
+	},
+	"homepage": "https://github.com/rdgonzaga/jar-protocol#readme",
+	"dependencies": {
+		"smpp": "^0.6.0-rc.4"
+	}
+}
