@@ -1,5 +1,6 @@
 export class SimpleSmsProtocol {
 	constructor() {
+		// in-memory multipart buffer keyed by short message ID
 		this.messages = [];
 	}
 
@@ -17,6 +18,7 @@ export class SimpleSmsProtocol {
 	}
 
 	parseHeader(frame) {
+		// 10-char header: 3(part) + 3(total) + 4(id)
 		const raw = frame.slice(0, 10);
 		const part = Number(raw.slice(0, 3));
 		const total = Number(raw.slice(3, 6));
@@ -61,6 +63,7 @@ export class SimpleSmsProtocol {
 			};
 		}
 
+		// reorder fragments before rebuild
 		msg.raw.sort((a, b) => this.parseHeader(a).part - this.parseHeader(b).part);
 		const joined = msg.raw.map((x) => x.slice(10)).join("");
 		const data = this.parseData(joined);
@@ -74,6 +77,7 @@ export class SimpleSmsProtocol {
 			.map((k) => `${k}=${data[k]}`)
 			.join("|");
 
+		// 150 chars body + 10 chars header = 160 char SMS
 		const chunkSize = 150;
 		const parts = [];
 		for (let i = 0; i < body.length; i += chunkSize) {

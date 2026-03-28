@@ -3,7 +3,7 @@ import { SimpleSmsProtocol } from "./protocol.js";
 export class SmppHttpBridge {
 	constructor(config = {}) {
 		this.config = {
-			backendUrl: config.backendUrl || "http://127.0.0.1:3000/sms/inbound",
+			backendUrl: config.backendUrl || "http://127.0.0.1:3000/api/v1/sms",
 			smppHost: config.smppHost || "127.0.0.1",
 			smppPort: Number(config.smppPort || 2775),
 			systemId: config.systemId || "tsupersaver-esme",
@@ -11,12 +11,14 @@ export class SmppHttpBridge {
 			sourceAddr: config.sourceAddr || "TsuperSaver",
 		};
 
+		// protocol parser/encoder for SMS text frames
 		this.protocol = new SimpleSmsProtocol();
 		this.session = null;
 		this.smpp = null;
 	}
 
 	async startSmpp() {
+		// lazy import that keeps simple/mock mode runnable even if SMPP is unused.
 		const mod = await import("smpp");
 		this.smpp = mod.default;
 
@@ -76,6 +78,7 @@ export class SmppHttpBridge {
 			return;
 		}
 
+		// reassembles multipart SMS until complete
 		const decoded = this.protocol.decode(text);
 		if (!decoded.done) {
 			console.log(
@@ -84,17 +87,9 @@ export class SmppHttpBridge {
 			return;
 		}
 
-		const body = {
-			channel: "sms",
-			transport: "smpp",
-			from,
-			to,
-			msgId: decoded.id,
-			authToken: decoded.data.a || "",
-			type: decoded.data.t || "",
-			payload: this.tryParseJson(decoded.data.p || "{}"),
-			receivedAt: new Date().toISOString(),
-		};
+		// this should be equal with our implementation
+		// on the post api { sessionId, text }.
+		const body = this.toOnlineApiRequest(decoded.data);
 
 		const response = await fetch(this.config.backendUrl, {
 			method: "POST",
@@ -106,7 +101,50 @@ export class SmppHttpBridge {
 			throw new Error(`backend HTTP ${response.status}`);
 		}
 
-		console.log(`[bridge] forwarded msgId=${body.msgId}`);
+		console.log(
+			`[bridge] forwarded msgId=${decoded.id} sessionId=${body.sessionId}`,
+		);
+	}
+
+	toOnlineApiRequest(data) {
+		const payload = this.tryParseJson(data.p || "{}");
+
+		const sessionId =
+			data.s || data.sessionId || payload.sessionId || `offline-${Date.now()}`;
+
+		const text =
+			this.safeDecodeURIComponent(data.x || "") ||
+			data.text ||
+			payload.text ||
+			this.buildSmsTextFromPayload(payload) ||
+			"HELP";
+
+		return { sessionId, text };
+	}
+
+	buildSmsTextFromPayload(payload) {
+		if (!payload || typeof payload !== "object") {
+			return "";
+		}
+
+		// preferred shape from mobile app payload
+		if (payload.gps && payload.command) {
+			return `${payload.gps}|${payload.command}`;
+		}
+
+		if (
+			payload.currentLat != null &&
+			payload.currentLng != null &&
+			payload.routeCode
+		) {
+			return `${payload.currentLat},${payload.currentLng}|${payload.routeCode}`;
+		}
+
+		if (payload.command) {
+			return String(payload.command);
+		}
+
+		return "";
 	}
 
 	tryParseJson(raw) {
@@ -117,23 +155,36 @@ export class SmppHttpBridge {
 		}
 	}
 
-	encodeAppMessage({ authToken = "", type = "", payload = {} }) {
+	safeDecodeURIComponent(value) {
+		if (!value) {
+			return "";
+		}
+		try {
+			return decodeURIComponent(value);
+		} catch {
+			return value;
+		}
+	}
+
+	encodeAppMessage({ sessionId = "", text = "", payload = {} }) {
+		// compact transport keys: s=sessionId, x=text, p=optional JSON
 		return this.protocol.encode({
-			a: authToken,
-			t: type,
+			s: sessionId,
+			x: encodeURIComponent(text),
 			p: JSON.stringify(payload),
 		});
 	}
 
 	async sendSmsFromBackend({
 		to,
-		authToken = "system",
-		type = "reply",
+		sessionId = "system",
+		text = "HELP",
 		payload = {},
 	}) {
-		const frames = this.encodeAppMessage({ authToken, type, payload });
+		const frames = this.encodeAppMessage({ sessionId, text, payload });
 
 		if (!this.session) {
+			// in simple mode, print frames instead of sending to telecom
 			console.log("[bridge] no SMPP session, outbound frames:");
 			for (const frame of frames) {
 				console.log(frame);
@@ -172,12 +223,12 @@ export async function mockInjectInboundSms(
 	{
 		from = "639171234567",
 		to = "2929",
-		authToken = "drv-demo",
-		type = "fuel.lookup",
-		payload = { routeCode: "7E", currentLat: 14.5631, currentLng: 121.037 },
+		sessionId = "demo-session-1",
+		text = "14.577,120.99|7E",
+		payload = {},
 	} = {},
 ) {
-	const frames = bridge.encodeAppMessage({ authToken, type, payload });
+	const frames = bridge.encodeAppMessage({ sessionId, text, payload });
 	for (const frame of frames) {
 		await bridge.handleIncomingText({ from, to, text: frame });
 	}

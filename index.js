@@ -10,10 +10,11 @@ const config = {
 	systemId: process.env.SMPP_SYSTEM_ID || "tsupersaver-esme",
 	password: process.env.SMPP_PASSWORD || "password",
 	sourceAddr: process.env.SMPP_SOURCE_ADDR || "TsuperSaver",
-	backendUrl: process.env.BACKEND_URL || "http://127.0.0.1:3000/sms/inbound",
+	backendUrl: process.env.BACKEND_URL || "http://127.0.0.1:3000/api/v1/sms",
 };
 
 async function main() {
+	// Default path for demo: simple mode without SMPP bind.
 	const mockMode = process.env.MOCK_MODE === "true";
 	const useSmpp = process.env.USE_SMPP === "true";
 
@@ -30,6 +31,7 @@ async function main() {
 	}
 
 	if (mockMode) {
+		// Simulate inbound SMS flow without telecom dependency.
 		setTimeout(async () => {
 			try {
 				await mockInjectInboundSms(bridge);
@@ -45,14 +47,10 @@ async function main() {
 			try {
 				await bridge.sendSmsFromBackend({
 					to: "639171234567",
-					type: "fuel.result",
+					sessionId: "demo-session-1",
+					text: "14.577,120.99|7E",
 					payload: {
-						routeCode: "7E",
-						results: [
-							"Shell Pedro Gil P56.20/L 0.9km",
-							"Petron Osmena P56.40/L 1.3km",
-							"Caltex Guadalupe P56.50/L 1.7km",
-						],
+						note: "Optional extra metadata",
 					},
 				});
 				console.log("[demo] mock outbound SMS submitted");
